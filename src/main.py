@@ -2,11 +2,23 @@ from tkinter import *
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
+import json
+import os
+import shutil
+import uuid
 
 window = Tk()
 window.geometry("700x400")
 window.title("Artist's Notes")
 window.config(background="#3b3b3b")
+
+DATA_FILE = "data.json"
+IMAGE_FOLDER = "data/images"
+
+os.makedirs(IMAGE_FOLDER, exist_ok=True)
+
+image_count = 0
+image_entries = []
 
 
 # ---------Upload button-----------
@@ -24,6 +36,65 @@ image_frame = tk.Frame(canvas, bg="#3b3b3b")
 
 canvas_window = canvas.create_window((350,0), window=image_frame, anchor="n")
 
+#--------------------------------------
+
+def display_item(image_path, description_text=""):
+     #Create new label for this image
+            global image_count
+
+            original_image = Image.open(image_path)
+
+            #Create thumbnail
+            display_image = original_image.copy()
+            display_image.thumbnail((300,300))
+
+            photo = ImageTk.PhotoImage(display_image)
+    
+            row = image_count // 2
+            column = image_count % 2
+    
+             #Create a frame for description
+            item_frame = tk.Frame(image_frame, bg="#3b3b3b")
+            item_frame.grid(row=row, column=column, padx=5, pady=5)
+
+    
+            #Image
+            image_label = tk.Label(item_frame, image=photo, bg="#797979")
+            image_label.pack()
+    
+            # keep it alive
+            image_label.image = photo
+    
+            
+    
+            image_label.bind("<Button-1>", lambda event, img=original_image: expand_image(img))
+    
+            description_frame = tk.Frame(item_frame, bg="#797979")
+            description_frame.pack(pady=(5,0))
+    
+            #Description
+            description = tk.Text(description_frame, width=35, height=4, wrap="word", bg="gray")
+            description_scrollbar = tk.Scrollbar(description_frame, command=description.yview)
+    
+            description.configure(yscrollcommand=description_scrollbar.set)
+            description.pack(side="left")
+            description_scrollbar.pack(side="right", fill="y")
+    
+            description.insert(1.0, description_text)
+    
+            image_count +=1
+
+            image_entries.append({
+                 "image_path": image_path,
+                 "description_widget": description
+            })
+
+    
+            #Automatically scroll down after upload
+            canvas.update_idletasks()
+            canvas.yview_moveto(1.0)
+
+
 def update_scrollregion(event):
     canvas.configure(scrollregion=canvas.bbox("all"))
 
@@ -37,6 +108,8 @@ canvas.bind_all("<MouseWheel>",mouse_scroll)
 #-------------------------------
 
 image_count = 0
+
+image_entries = []
 
 #-----Expand image func---------
 def expand_image(original_image):
@@ -69,54 +142,50 @@ def add_image():
 
     if file_path:
 
-        # Resize for the thumbnail
-        original_image = Image.open(file_path)
-        display_image = original_image.copy()
-        display_image.thumbnail((300,300))
+        extension = os.path.splitext(file_path)[1]
+        image_name = f"{uuid.uuid4()}{extension}"
 
-        photo = ImageTk.PhotoImage(display_image)
+        saved_path = os.path.join(IMAGE_FOLDER, image_name)
+        shutil.copy2(file_path, saved_path)
 
+        display_item(saved_path)
 
+def save_data():
+     data = []
 
-        #Create new label for this image
-        global image_count
+     for entry in image_entries:
+          description_text = entry["description_widget"].get("1.0","end-1c")
+          data.append({
+               "image_path":entry["image_path"],
+               "description": description_text
+          })
 
-        row = image_count // 2
-        column = image_count % 2
+     with open(DATA_FILE, "w", encoding="utf-8") as file:
+          json.dump(data, file, indent=4, ensure_ascii=False)
 
-         #Create a frame for description
-        item_frame = tk.Frame(image_frame, bg="#3b3b3b")
-        item_frame.grid(row=row, column=column, padx=5, pady=5)
+     print("Saved successfully!")
 
-        #Image
-        image_label = tk.Label(item_frame, image=photo, bg="#797979")
-        image_label.pack()
+save_button = tk.Button(button_frame, text="Save", command=save_data)
+save_button.pack(side="left",padx=10)
 
-        # keep it alive
-        image_label.image = photo
+def load_data():
+     if not os.path.exists(DATA_FILE):
+          return
+     with open(DATA_FILE, "r", encoding="utf-8") as file:
+          data = json.load(file)
 
-        
+     for entry in data:
+          image_path = entry["image_path"]
+          description = entry["description"]
 
-        image_label.bind("<Button-1>", lambda event, img=original_image: expand_image(img))
+          if os.path.exists(image_path):
+               display_item(image_path, description)
 
-        description_frame = tk.Frame(item_frame, bg="#797979")
-        description_frame.pack(pady=(5,0))
+def close_app():
+     save_data()
+     window.destroy()
 
-        #Description
-        description = tk.Text(description_frame, width=35, height=4, wrap="word", bg="gray")
-        description_scrollbar = tk.Scrollbar(description_frame, command=description.yview)
-
-        description.configure(yscrollcommand=description_scrollbar.set)
-        description.pack(side="left")
-        description_scrollbar.pack(side="right", fill="y")
-
-        description.insert(1.0, "")
-
-        image_count +=1
-
-        #Automatically scroll down after upload
-        canvas.update_idletasks()
-        canvas.yview_moveto(1.0)
+window.protocol("DELETE_WINDOW", close_app)
 
 add_button = tk.Button(
     window,
@@ -125,5 +194,6 @@ add_button = tk.Button(
 )
 add_button.pack(pady=20)
 
+load_data()
 
 window.mainloop()
